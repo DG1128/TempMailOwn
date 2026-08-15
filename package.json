@@ -1,0 +1,26 @@
+{
+  "name": "tempmail-pro",
+  "version": "1.0.0",
+  "description": "TempMail Pro — Disposable Temporary Email with Locked Vault, Legit Business Domains & OTP Extractor",
+  "main": "server/index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix client\" \"npm run start --prefix server\"",
+    "dev:server": "npm run start --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build": "npm run build --prefix client",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+  },
+  "dependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "keywords": [
+    "temp-mail",
+    "disposable-email",
+    "temporary-mail",
+    "otp-extractor",
+    "stealth-email",
+    "free-mail"
+  ],
+  "author": "",
+  "license": "ISC"
+}
