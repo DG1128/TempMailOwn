@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#6366f1" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <linearGradient id="glowGrad" x1="32" y1="8" x2="32" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#e0e7ff" stop-opacity="0.6" />
+    </linearGradient>
+    <filter id="shadow" x="0" y="0" width="64" height="64" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#6366f1" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Shield Body -->
+  <path d="M32 4L12 12V28C12 42.5 20.5 54 32 58C43.5 54 52 42.5 52 28V12L32 4Z" 
+        fill="url(#bgGrad)" filter="url(#shadow)" />
+
+  <!-- Inner High-Tech Shield Contour -->
+  <path d="M32 8L16 14.5V28C16 40 23 50 32 54C41 50 48 40 48 28V14.5L32 8Z" 
+        fill="#0f172a" fill-opacity="0.4" stroke="rgba(255, 255, 255, 0.25)" stroke-width="1.5" />
+
+  <!-- Lightning Bolt / Verification Key Icon -->
+  <path d="M34 18L22 33H31L28 46L42 29H33L36 18H34Z" 
+        fill="url(#glowGrad)" />
+</svg>
