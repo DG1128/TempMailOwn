@@ -6,8 +6,10 @@ import {
   ShieldCheck, 
   Lock, 
   UserCheck, 
-  Shuffle,
-  CheckCircle2
+  Shuffle, 
+  Globe2,
+  CheckCircle2,
+  Building
 } from 'lucide-react';
 
 const HUMAN_NAMES = [
@@ -23,6 +25,8 @@ const HUMAN_NAMES = [
   'ethan.harris',
   'lucas.martin',
   'chloe.robinson',
+  'marcus.vance',
+  'elena.cross',
 ];
 
 export default function CustomizeModal({
@@ -34,21 +38,28 @@ export default function CustomizeModal({
 }) {
   const [username, setUsername] = useState('');
   const [selectedDomain, setSelectedDomain] = useState('');
+  const [selectedProviderFilter, setSelectedProviderFilter] = useState('all');
   const [lockOnCreate, setLockOnCreate] = useState(false);
   const [customPassword, setCustomPassword] = useState('');
 
   if (!isOpen) return null;
 
   const activeDomainList = domains.length > 0 ? domains : [
-    { domain: 'raleigh-construction.com', stealthScore: 99, badge: 'Enterprise .COM' },
-    { domain: 'questtechsystems.com', stealthScore: 99, badge: 'Enterprise .COM' },
-    { domain: 'pastryofistanbul.com', stealthScore: 99, badge: 'Enterprise .COM' },
-    { domain: 'oakon.com', stealthScore: 96, badge: 'Verified .COM' },
-    { domain: 'teihu.com', stealthScore: 96, badge: 'Verified .COM' },
-    { domain: 'emalupe.com', stealthScore: 96, badge: 'Verified .COM' },
+    { domain: 'ruutukf.com', provider: 'tempmail_io', stealthScore: 98, badge: 'Verified .COM', region: '🇺🇸 US CDN' },
+    { domain: 'yzcalo.com', provider: 'tempmail_io', stealthScore: 97, badge: 'Verified .COM', region: '🇺🇸 US CDN' },
+    { domain: 'maxxspace.com', provider: 'mailtm', stealthScore: 99, badge: 'Enterprise .COM', region: '🇩🇪 Cloudflare' },
+    { domain: 'sharklasers.com', provider: 'guerrillamail', stealthScore: 98, badge: 'Popular .COM', region: '🛡️ Infallible' },
+    { domain: 'guerrillamail.com', provider: 'guerrillamail', stealthScore: 96, badge: 'Veteran .COM', region: '🛡️ Infallible' },
+    { domain: 'grr.la', provider: 'guerrillamail', stealthScore: 94, badge: 'Clean Tier', region: '🛡️ Infallible' },
   ];
 
-  const currentDomain = selectedDomain || activeDomainList[0]?.domain;
+  const filteredDomains = activeDomainList.filter((d) => {
+    if (selectedProviderFilter === 'all') return true;
+    return d.provider === selectedProviderFilter;
+  });
+
+  const currentDomain = selectedDomain || filteredDomains[0]?.domain || activeDomainList[0]?.domain;
+  const currentDomainObj = activeDomainList.find((d) => d.domain === currentDomain) || activeDomainList[0];
 
   const handlePickHumanName = () => {
     const randomName = HUMAN_NAMES[Math.floor(Math.random() * HUMAN_NAMES.length)];
@@ -68,6 +79,8 @@ export default function CustomizeModal({
 
     onCreateMailbox({
       address: finalAddress,
+      domain: currentDomain,
+      provider: currentDomainObj?.provider,
       password: customPassword.trim() || undefined,
       isLocked: lockOnCreate,
     });
@@ -76,19 +89,29 @@ export default function CustomizeModal({
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+      <div className="modal-card" style={{ maxWidth: '600px' }} onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ width: '36px', height: '36px', borderRadius: 'var(--radius-sm)', background: 'rgba(99, 102, 241, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(99, 102, 241, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
               <Sliders size={20} color="var(--accent-primary)" />
             </div>
             <div>
               <div style={{ fontWeight: 800, fontSize: '16px', color: 'var(--text-main)' }}>
-                Customize Temporary Email
+                Customize Worldwide Temporary Email
               </div>
               <div style={{ fontSize: '12px', color: 'var(--text-dim)' }}>
-                Pick legitimate corporate domains & custom prefixes
+                Pick legitimate corporate domains & custom stealth prefixes
               </div>
             </div>
           </div>
@@ -106,18 +129,18 @@ export default function CustomizeModal({
               <button 
                 type="button" 
                 className="btn btn-secondary" 
-                style={{ flex: 1, fontSize: '12px', padding: '6px 10px' }}
+                style={{ flex: 1, fontSize: '12px', padding: '8px 10px' }}
                 onClick={handlePickHumanName}
                 title="Generates names like david.miller94 that look authentic to websites"
               >
                 <UserCheck size={14} color="var(--accent-secondary)" />
-                <span>Human Name</span>
+                <span>Legit Human Name</span>
               </button>
 
               <button 
                 type="button" 
                 className="btn btn-secondary" 
-                style={{ flex: 1, fontSize: '12px', padding: '6px 10px' }}
+                style={{ flex: 1, fontSize: '12px', padding: '8px 10px' }}
                 onClick={handleRandomize}
                 title="Generates a random secure alphanumeric string"
               >
@@ -128,54 +151,88 @@ export default function CustomizeModal({
 
             {/* Username Input */}
             <div className="form-group">
-              <label className="form-label">Username / Prefix</label>
+              <label className="form-label">Username / Address Prefix</label>
               <input
                 type="text"
                 className="form-input mono"
-                placeholder="e.g. alex.miller, dev.test99"
+                placeholder="e.g. alex.morgan84, dev.test99"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
               />
             </div>
 
+            {/* Provider Filter Tabs */}
+            <div className="form-group">
+              <label className="form-label">Filter by Worldwide Provider</label>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {[
+                  { id: 'all', label: `All (${activeDomainList.length})` },
+                  { id: 'tempmail_io', label: '🇺🇸 US/EU .COM CDN' },
+                  { id: 'guerrillamail', label: '🛡️ Guerrilla (9 Domains)' },
+                  { id: 'mailtm', label: '🇩🇪 Mail.tm' },
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    className={`btn ${selectedProviderFilter === tab.id ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: '11px', padding: '5px 10px' }}
+                    onClick={() => {
+                      setSelectedProviderFilter(tab.id);
+                      const matching = activeDomainList.filter((d) => tab.id === 'all' || d.provider === tab.id);
+                      if (matching.length > 0) setSelectedDomain(matching[0].domain);
+                    }}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             {/* Domain Selector with Stealth Rating */}
             <div className="form-group">
-              <label className="form-label">Select Business Domain ({activeDomainList.length} Available)</label>
+              <label className="form-label">Select Business Domain ({filteredDomains.length} available)</label>
               <select
                 className="form-select mono"
                 value={currentDomain}
                 onChange={(e) => setSelectedDomain(e.target.value)}
               >
-                {activeDomainList.map((d) => (
+                {filteredDomains.map((d) => (
                   <option key={d.domain} value={d.domain}>
-                    @{d.domain} &bull; [{d.badge || 'Verified .COM'} - {d.stealthScore || 96}% Bypass]
+                    @{d.domain} &bull; [{d.badge || 'Verified'} - {d.stealthScore || 96}% Bypass] ({d.region || d.provider})
                   </option>
                 ))}
               </select>
             </div>
 
-            {/* Preview Box */}
-            <div style={{ background: 'var(--bg-input)', padding: '12px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-card)' }}>
+            {/* Live Preview Box */}
+            <div style={{ background: 'var(--bg-input)', padding: '14px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border-card)' }}>
               <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginBottom: '4px', textTransform: 'uppercase', fontWeight: 700 }}>
-                Live Email Address Preview:
+                Live Address Preview:
               </div>
-              <div className="mono" style={{ fontSize: '15px', fontWeight: 800, color: 'var(--accent-secondary)' }}>
+              <div className="mono" style={{ fontSize: '16px', fontWeight: 800, color: 'var(--accent-secondary)' }}>
                 {(username.trim() || 'yourname')}@{currentDomain}
+              </div>
+              <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span className="badge badge-emerald" style={{ fontSize: '10px' }}>
+                  {currentDomainObj?.badge || 'Enterprise .COM'}
+                </span>
+                <span>Bypass Score: {currentDomainObj?.stealthScore || 98}%</span>
+                <span>&bull; {currentDomainObj?.region || 'Global'}</span>
               </div>
             </div>
 
             {/* Lock in Vault Option */}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '8px 4px' }}>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '8px 4px' }}>
               <input
                 type="checkbox"
                 checked={lockOnCreate}
                 onChange={(e) => setLockOnCreate(e.target.checked)}
-                style={{ width: '16px', height: '16px', accentColor: 'var(--accent-amber)' }}
+                style={{ width: '16px', height: '16px', accentColor: 'var(--accent-amber)', marginTop: '2px' }}
               />
               <div style={{ fontSize: '13px', color: 'var(--text-main)' }}>
                 <span style={{ fontWeight: 700 }}>🔒 Lock & Pin in Vault immediately</span>
                 <div style={{ fontSize: '11px', color: 'var(--text-dim)' }}>
-                  Saves credentials permanently so you can re-access this email anytime later.
+                  Saves address credentials permanently so you can re-access this email anytime in the future.
                 </div>
               </div>
             </label>

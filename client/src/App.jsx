@@ -8,13 +8,16 @@ import MessageDetail from './components/MessageDetail';
 import VaultModal from './components/VaultModal';
 import CustomizeModal from './components/CustomizeModal';
 import QRCodeModal from './components/QRCodeModal';
+import ProviderStatusModal from './components/ProviderStatusModal';
+import PersonaModal from './components/PersonaModal';
+import SimulateEmailModal from './components/SimulateEmailModal';
 import Toast from './components/Toast';
 import { playNewEmailChime, setSoundEnabled } from './utils/audio';
 
-const STORAGE_TABS_KEY = 'tempmail_active_tabs_v2';
-const STORAGE_VAULT_KEY = 'tempmail_vault_v2';
-const STORAGE_THEME_KEY = 'tempmail_theme_v2';
-const STORAGE_SOUND_KEY = 'tempmail_sound_v2';
+const STORAGE_TABS_KEY = 'tempmail_active_tabs_v3';
+const STORAGE_VAULT_KEY = 'tempmail_vault_v3';
+const STORAGE_THEME_KEY = 'tempmail_theme_v3';
+const STORAGE_SOUND_KEY = 'tempmail_sound_v3';
 
 const POLL_INTERVAL_SECONDS = 10;
 
@@ -69,6 +72,9 @@ export default function App() {
   const [isVaultOpen, setIsVaultOpen] = useState(false);
   const [isCustomizeOpen, setIsCustomizeOpen] = useState(false);
   const [isQROpen, setIsQROpen] = useState(false);
+  const [isStatusOpen, setIsStatusOpen] = useState(false);
+  const [isPersonaOpen, setIsPersonaOpen] = useState(false);
+  const [isSimulateOpen, setIsSimulateOpen] = useState(false);
   const [isCreatingMailbox, setIsCreatingMailbox] = useState(false);
 
   // Polling timer & refresh
@@ -91,7 +97,7 @@ export default function App() {
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3500);
+    }, 3800);
   }, []);
 
   const dismissToast = (id) => {
@@ -122,7 +128,7 @@ export default function App() {
     localStorage.setItem(STORAGE_VAULT_KEY, JSON.stringify(vaultItems));
   }, [vaultItems]);
 
-  // 1. Fetch available domains on load
+  // 1. Fetch available global domains on load
   useEffect(() => {
     setDomainsLoading(true);
     axios
@@ -153,6 +159,7 @@ export default function App() {
     try {
       const res = await axios.post('/api/mailbox/create', {
         address: customParams.address || undefined,
+        domain: customParams.domain || undefined,
         password: customParams.password || undefined,
         provider: customParams.provider || undefined,
       });
@@ -164,7 +171,8 @@ export default function App() {
           address: mb.address,
           password: mb.password,
           token: mb.token,
-          provider: mb.provider,
+          sidToken: mb.sidToken || mb.token,
+          provider: mb.provider || 'tempmail_io',
           createdAt: mb.createdAt,
           isLocked: !!customParams.isLocked,
           note: customParams.note || '',
@@ -173,10 +181,9 @@ export default function App() {
         };
 
         setTabs((prev) => {
-          // If custom address already open, switch to it
           const existing = prev.find((t) => t.address.toLowerCase() === mb.address.toLowerCase());
           if (existing) {
-            return prev.map((t) => (t.id === existing.id ? { ...t, token: mb.token } : t));
+            return prev.map((t) => (t.id === existing.id ? { ...t, token: mb.token, sidToken: mb.sidToken } : t));
           }
           return [...prev, newTab];
         });
@@ -188,12 +195,11 @@ export default function App() {
             if (prev.some((v) => v.address.toLowerCase() === mb.address.toLowerCase())) return prev;
             return [...prev, newTab];
           });
-          showToast(`Locked and saved in Vault: ${mb.address}`, 'success');
+          showToast(`Locked & saved in Vault: ${mb.address}`, 'success');
         } else {
           showToast(`Created stealth address: ${mb.address}`, 'success');
         }
 
-        // Reset countdown
         setCountdownSecs(POLL_INTERVAL_SECONDS);
       }
     } catch (err) {
@@ -211,20 +217,23 @@ export default function App() {
   const currentDomainName = currentTab?.address?.split('@')[1] || '';
   const domainStealthInfo = domains.find((d) => d.domain.toLowerCase() === currentDomainName.toLowerCase()) || {
     badge: 'Enterprise .COM',
-    stealthScore: 99,
+    stealthScore: 98,
+    region: '🇺🇸 US / 🇪🇺 EU High Speed',
   };
 
   // 3. Poll messages for the active mailbox
   const fetchMessagesForTab = useCallback(async (tab, isSilent = false) => {
-    if (!tab || !tab.token) return;
+    if (!tab || (!tab.token && !tab.address)) return;
 
     if (!isSilent) setIsRefreshing(true);
 
     try {
       const res = await axios.get('/api/mailbox/messages', {
         headers: {
-          Authorization: `Bearer ${tab.token}`,
-          'x-provider': tab.provider || 'mailgw',
+          Authorization: `Bearer ${tab.token || ''}`,
+          'x-provider': tab.provider || 'tempmail_io',
+          'x-address': tab.address || '',
+          'x-sid-token': tab.sidToken || tab.token || '',
         },
       });
 
@@ -232,18 +241,16 @@ export default function App() {
         const incoming = res.data.messages;
 
         // Check if there are new messages not previously in tab
-        const prevIds = new Set((tab.messages || []).map((m) => m.id));
-        const newUnseen = incoming.filter((m) => !prevIds.has(m.id));
+        const prevIds = new Set((tab.messages || []).map((m) => String(m.id)));
+        const newUnseen = incoming.filter((m) => !prevIds.has(String(m.id)));
 
         if (newUnseen.length > 0) {
           playNewEmailChime();
           const firstNew = newUnseen[0];
           showToast(`📧 New email from ${firstNew.from?.name || firstNew.from?.address || 'Sender'}: ${firstNew.subject}`, 'info');
 
-          // Update browser document title
           document.title = `(${newUnseen.length}) New Email - TempMail Pro`;
 
-          // Auto-select latest message if none is open
           if (!selectedMessageId) {
             setSelectedMessageId(firstNew.id);
           }
@@ -289,7 +296,7 @@ export default function App() {
 
   // 5. Fetch Full Message Details when selectedMessageId changes
   useEffect(() => {
-    if (!selectedMessageId || !currentTab?.token) {
+    if (!selectedMessageId || !currentTab) {
       setFullMessage(null);
       return;
     }
@@ -298,8 +305,10 @@ export default function App() {
     axios
       .get(`/api/mailbox/messages/${selectedMessageId}`, {
         headers: {
-          Authorization: `Bearer ${currentTab.token}`,
-          'x-provider': currentTab.provider || 'mailgw',
+          Authorization: `Bearer ${currentTab.token || ''}`,
+          'x-provider': currentTab.provider || 'tempmail_io',
+          'x-address': currentTab.address || '',
+          'x-sid-token': currentTab.sidToken || currentTab.token || '',
         },
       })
       .then((res) => {
@@ -313,7 +322,7 @@ export default function App() {
                 ? {
                     ...t,
                     messages: (t.messages || []).map((m) =>
-                      m.id === selectedMessageId ? { ...m, seen: true } : m
+                      String(m.id) === String(selectedMessageId) ? { ...m, seen: true } : m
                     ),
                   }
                 : t
@@ -326,7 +335,7 @@ export default function App() {
         showToast('Failed to load full message content', 'error');
       })
       .finally(() => setMessageLoading(false));
-  }, [selectedMessageId, currentTab?.id, currentTab?.token, currentTab?.provider, showToast]);
+  }, [selectedMessageId, currentTab?.id, currentTab?.token, currentTab?.provider, currentTab?.address, showToast]);
 
   // Reset Document Title when user views message
   useEffect(() => {
@@ -334,7 +343,7 @@ export default function App() {
     if (totalUnread > 0) {
       document.title = `(${totalUnread}) TempMail Pro`;
     } else {
-      document.title = 'TempMail Pro — Fast Disposable Temp Mail with Locked Vault';
+      document.title = 'TempMail Pro — Worldwide Disposable Temp Mail with Locked Vault';
     }
   }, [tabs]);
 
@@ -381,7 +390,6 @@ export default function App() {
   };
 
   const handleRestoreFromVault = (item) => {
-    // Check if already open in tabs
     const existing = tabs.find((t) => t.address.toLowerCase() === item.address.toLowerCase());
     if (existing) {
       setActiveTabId(existing.id);
@@ -404,7 +412,6 @@ export default function App() {
     setVaultItems((prev) =>
       prev.filter((v) => v.id !== idOrAddr && v.address !== idOrAddr)
     );
-    // Also unlock tab if open
     setTabs((prev) =>
       prev.map((t) =>
         t.id === idOrAddr || t.address === idOrAddr ? { ...t, isLocked: false } : t
@@ -436,19 +443,21 @@ export default function App() {
   };
 
   const handleDeleteMessage = async (msgId) => {
-    if (!currentTab?.token) return;
+    if (!currentTab) return;
     try {
       await axios.delete(`/api/mailbox/messages/${msgId}`, {
         headers: {
-          Authorization: `Bearer ${currentTab.token}`,
-          'x-provider': currentTab.provider || 'mailgw',
+          Authorization: `Bearer ${currentTab.token || ''}`,
+          'x-provider': currentTab.provider || 'tempmail_io',
+          'x-address': currentTab.address || '',
+          'x-sid-token': currentTab.sidToken || currentTab.token || '',
         },
       });
 
       setTabs((prev) =>
         prev.map((t) =>
           t.id === currentTab.id
-            ? { ...t, messages: (t.messages || []).filter((m) => m.id !== msgId) }
+            ? { ...t, messages: (t.messages || []).filter((m) => String(m.id) !== String(msgId)) }
             : t
         )
       );
@@ -471,8 +480,10 @@ export default function App() {
       (currentTab.messages || []).forEach((m) => {
         axios.delete(`/api/mailbox/messages/${m.id}`, {
           headers: {
-            Authorization: `Bearer ${currentTab.token}`,
-            'x-provider': currentTab.provider || 'mailgw',
+            Authorization: `Bearer ${currentTab.token || ''}`,
+            'x-provider': currentTab.provider || 'tempmail_io',
+            'x-address': currentTab.address || '',
+            'x-sid-token': currentTab.sidToken || currentTab.token || '',
           },
         }).catch(() => {});
       });
@@ -497,6 +508,9 @@ export default function App() {
         onToggleSound={() => setSoundOn(!soundOn)}
         currentTheme={currentTheme}
         onChangeTheme={setCurrentTheme}
+        onOpenStatusModal={() => setIsStatusOpen(true)}
+        onOpenSimulateModal={() => setIsSimulateOpen(true)}
+        onOpenPersonaModal={() => setIsPersonaOpen(true)}
       />
 
       {/* 2. Active Email Bar & Actions Cluster */}
@@ -511,6 +525,8 @@ export default function App() {
           if (currentTab) fetchMessagesForTab(currentTab, false);
           setCountdownSecs(POLL_INTERVAL_SECONDS);
         }}
+        onOpenSimulate={() => setIsSimulateOpen(true)}
+        onOpenPersona={() => setIsPersonaOpen(true)}
         isRefreshing={isRefreshing}
         countdownSecs={countdownSecs}
         maxCountdown={POLL_INTERVAL_SECONDS}
@@ -580,6 +596,30 @@ export default function App() {
         isOpen={isQROpen}
         onClose={() => setIsQROpen(false)}
         emailAddress={currentTab?.address}
+        onShowToast={showToast}
+      />
+
+      {/* Worldwide Node Status & Latency Modal */}
+      <ProviderStatusModal
+        isOpen={isStatusOpen}
+        onClose={() => setIsStatusOpen(false)}
+      />
+
+      {/* Fake Persona & Identity Generator Modal */}
+      <PersonaModal
+        isOpen={isPersonaOpen}
+        onClose={() => setIsPersonaOpen(false)}
+        onShowToast={showToast}
+      />
+
+      {/* Instant Test Email Simulation Modal */}
+      <SimulateEmailModal
+        isOpen={isSimulateOpen}
+        onClose={() => setIsSimulateOpen(false)}
+        activeAddress={currentTab?.address}
+        onEmailSent={() => {
+          if (currentTab) fetchMessagesForTab(currentTab, false);
+        }}
         onShowToast={showToast}
       />
 

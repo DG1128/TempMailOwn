@@ -1072,3 +1072,53 @@ h1, h2, h3, h4, h5, h6 {
     transform: translateY(0);
   }
 }
+
+.email-hero-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Responsive Layout */
+@media (max-width: 900px) {
+  .app-container {
+    padding: 12px;
+  }
+  .inbox-grid {
+    grid-template-columns: 1fr;
+  }
+  .message-list-column {
+    min-height: 280px;
+    max-height: 380px;
+  }
+  .hide-on-mobile {
+    display: none !important;
+  }
+  .header-center-badges {
+    order: 3;
+    width: 100%;
+    justify-content: center;
+  }
+  .app-header {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .email-display-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .email-address-wrapper {
+    width: 100%;
+  }
+  .email-actions-cluster {
+    width: 100%;
+    justify-content: stretch;
+  }
+  .email-actions-cluster .btn {
+    flex: 1;
+    min-width: 110px;
+  }
+}
+
