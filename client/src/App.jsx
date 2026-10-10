@@ -256,13 +256,15 @@ export default function App() {
           }
         }
 
-        // Update tab messages
+        // Update tab messages & refreshed session token
         setTabs((prev) =>
           prev.map((t) =>
             t.id === tab.id
               ? {
                   ...t,
                   messages: incoming,
+                  sidToken: res.data.refreshedSidToken || t.sidToken,
+                  token: res.data.refreshedSidToken || t.token,
                   lastChecked: Date.now(),
                 }
               : t
@@ -617,7 +619,10 @@ export default function App() {
         isOpen={isSimulateOpen}
         onClose={() => setIsSimulateOpen(false)}
         activeAddress={currentTab?.address}
-        onEmailSent={() => {
+        onEmailSent={(newEmailId) => {
+          if (newEmailId) {
+            setSelectedMessageId(newEmailId);
+          }
           if (currentTab) fetchMessagesForTab(currentTab, false);
         }}
         onShowToast={showToast}

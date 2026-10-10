@@ -61,7 +61,7 @@ export default function SimulateEmailModal({
 
       if (res.data.success) {
         onShowToast?.(`⚡ Test email delivered! OTP code: ${res.data.otp}`, 'success');
-        onEmailSent?.();
+        onEmailSent?.(res.data.emailId);
         onClose();
       }
     } catch (err) {

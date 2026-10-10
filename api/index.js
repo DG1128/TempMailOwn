@@ -25,7 +25,7 @@ const PROVIDERS = {
   guerrillamail: {
     name: 'Guerrilla Mail (18-Yr Infallible)',
     apiUrl: 'https://api.guerrillamail.com/ajax.php',
-    region: '🌐 Global Resilient',
+    region: '🛡️ Global Resilient',
     type: 'Infallible Veteran',
   },
   mailgw: {
@@ -69,7 +69,7 @@ function calculateStealthScore(domain, providerKey) {
     if (tld === 'com') {
       return { score: 97, badge: 'Veteran .COM', isLegitCorporate: true, region: '🌐 Global' };
     }
-    return { score: 94, badge: 'Resilient Tier', isLegitCorporate: false, region: '🌐 Global' };
+    return { score: 94, badge: 'Resilient Tier', isLegitCorporate: false, region: '🛡️ Infallible Shield' };
   }
 
   if (tld === 'com') {
@@ -103,8 +103,8 @@ async function fetchAllGlobalDomains() {
   const domainSet = new Set();
 
   const addDomain = (domain, provider, providerName, extra = {}) => {
-    const dLower = domain.toLowerCase();
-    if (domainSet.has(dLower)) return;
+    const dLower = (domain || '').toLowerCase().trim();
+    if (!dLower || domainSet.has(dLower)) return;
     domainSet.add(dLower);
 
     const { score, badge, isLegitCorporate, region } = calculateStealthScore(dLower, provider);
@@ -260,10 +260,50 @@ async function checkProviderHealth() {
   return results;
 }
 
+async function getOrRenewGuerrillaSession(prefix, existingSid) {
+  if (existingSid) {
+    try {
+      const testRes = await fetch(
+        `${PROVIDERS.guerrillamail.apiUrl}?f=check_email&seq=0&sid_token=${encodeURIComponent(existingSid)}`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(4000) }
+      );
+      if (testRes.ok) {
+        const testData = await testRes.json();
+        if (!testData.error) {
+          return { sidToken: existingSid, email: testData.email };
+        }
+      }
+    } catch (e) {}
+  }
+
+  try {
+    const initRes = await fetch(`${PROVIDERS.guerrillamail.apiUrl}?f=get_email_address`, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      signal: AbortSignal.timeout(6000),
+    });
+    if (initRes.ok) {
+      const initData = await initRes.json();
+      const newSid = initData.sid_token;
+      if (prefix) {
+        const setRes = await fetch(
+          `${PROVIDERS.guerrillamail.apiUrl}?f=set_email_user&email_user=${encodeURIComponent(prefix)}&lang=en&sid_token=${encodeURIComponent(newSid)}`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) }
+        );
+        if (setRes.ok) {
+          const setData = await setRes.json();
+          return { sidToken: newSid, email: setData.email_addr || initData.email_addr };
+        }
+      }
+      return { sidToken: newSid, email: initData.email_addr };
+    }
+  } catch (err) {}
+  return { sidToken: existingSid || 'gm_' + Date.now(), email: '' };
+}
+
 app.get('/api/domains', async (req, res) => {
   try {
     const domains = await fetchAllGlobalDomains();
-    res.json({ success: true, count: domains.length, domains });
+    res.json({ success: true, count: domains.length, domains: domains });
   } catch (error) {
     res.status(500).json({ success: false, error: 'Failed to retrieve domain list' });
   }
@@ -282,24 +322,38 @@ app.post('/api/mailbox/create', async (req, res) => {
   let { address, password, provider, domain } = req.body;
   const domains = await fetchAllGlobalDomains();
 
+  if (domain) {
+    const domainMatch = domains.find((d) => d.domain.toLowerCase() === domain.toLowerCase());
+    if (domainMatch) {
+      provider = domainMatch.provider;
+    } else if (GUERRILLA_DOMAINS.includes(domain.toLowerCase())) {
+      provider = 'guerrillamail';
+    }
+  }
+
+  if (address && address.includes('@')) {
+    const extractedDomain = address.split('@')[1].toLowerCase();
+    domain = extractedDomain;
+    const domainMatch = domains.find((d) => d.domain.toLowerCase() === extractedDomain);
+    if (domainMatch) {
+      provider = domainMatch.provider;
+    } else if (GUERRILLA_DOMAINS.includes(extractedDomain)) {
+      provider = 'guerrillamail';
+    }
+  }
+
   if (!address && !domain) {
     const topDomain = domains[Math.floor(Math.random() * Math.min(domains.length, 6))] || domains[0];
     domain = topDomain?.domain || 'ruutukf.com';
     provider = topDomain?.provider || 'tempmail_io';
-  } else if (!domain && address && address.includes('@')) {
-    domain = address.split('@')[1];
-    const match = domains.find((d) => d.domain.toLowerCase() === domain.toLowerCase());
-    if (match) provider = match.provider;
   }
 
-  if (!provider) {
-    const match = domains.find((d) => d.domain.toLowerCase() === (domain || '').toLowerCase());
-    provider = match ? match.provider : 'tempmail_io';
-  }
+  if (!provider) provider = 'tempmail_io';
 
   let prefix = address ? address.split('@')[0] : '';
   if (!prefix) prefix = 'user_' + Math.random().toString(36).substring(2, 9);
   prefix = prefix.toLowerCase().replace(/[^a-z0-9._-]/g, '');
+
   if (!password) password = 'Vault#' + Math.random().toString(36).substring(2, 10) + 'X9!';
 
   const providerCascade = [provider, 'tempmail_io', 'guerrillamail', 'mailtm'].filter((v, i, a) => a.indexOf(v) === i);
@@ -342,22 +396,20 @@ app.post('/api/mailbox/create', async (req, res) => {
         if (initRes.ok) {
           const initData = await initRes.json();
           const sidToken = initData.sid_token;
-          let finalAddress = initData.email_addr;
+          let targetGuerrillaDomain = 'sharklasers.com';
+          if (domain && GUERRILLA_DOMAINS.includes(domain.toLowerCase())) {
+            targetGuerrillaDomain = domain.toLowerCase();
+          }
+          let finalAddress = `${prefix}@${targetGuerrillaDomain}`;
 
           try {
             const setRes = await fetch(
-              `${PROVIDERS.guerrillamail.apiUrl}?f=set_email_user&email_user=${encodeURIComponent(prefix)}&lang=en&sid_token=${sidToken}`,
+              `${PROVIDERS.guerrillamail.apiUrl}?f=set_email_user&email_user=${encodeURIComponent(prefix)}&lang=en&sid_token=${encodeURIComponent(sidToken)}`,
               { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(4000) }
             );
             if (setRes.ok) {
               const setData = await setRes.json();
-              if (setData.email_addr) {
-                if (domain && GUERRILLA_DOMAINS.includes(domain.toLowerCase())) {
-                  finalAddress = `${prefix}@${domain.toLowerCase()}`;
-                } else {
-                  finalAddress = setData.email_addr;
-                }
-              }
+              if (setData.email_addr) finalAddress = `${prefix}@${targetGuerrillaDomain}`;
             }
           } catch (e) {}
 
@@ -381,12 +433,15 @@ app.post('/api/mailbox/create', async (req, res) => {
         const targetDomain = mtmDomains.some((d) => d.domain === domain) ? domain : mtmDomains[0]?.domain || 'maxxspace.com';
         const targetAddress = `${prefix}@${targetDomain}`;
 
-        await fetch(`${PROVIDERS.mailtm.apiUrl}/accounts`, {
+        const regRes = await fetch(`${PROVIDERS.mailtm.apiUrl}/accounts`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
           body: JSON.stringify({ address: targetAddress, password: password }),
           signal: AbortSignal.timeout(6000),
         });
+
+        let regData = {};
+        if (regRes.ok) regData = await regRes.json();
 
         const authRes = await fetch(`${PROVIDERS.mailtm.apiUrl}/token`, {
           method: 'POST',
@@ -400,12 +455,12 @@ app.post('/api/mailbox/create', async (req, res) => {
           return res.json({
             success: true,
             mailbox: {
-              id: authData.id,
+              id: regData.id || authData.id,
               address: targetAddress,
               provider: 'mailtm',
               token: authData.token,
               password: password,
-              createdAt: new Date().toISOString(),
+              createdAt: regData.createdAt || new Date().toISOString(),
             },
           });
         }
@@ -458,22 +513,47 @@ app.post('/api/mailbox/login', async (req, res) => {
 app.get('/api/mailbox/messages', async (req, res) => {
   try {
     const authHeader = req.headers.authorization || '';
-    const provider = req.headers['x-provider'] || 'tempmail_io';
+    let provider = req.headers['x-provider'] || 'tempmail_io';
     const address = (req.headers['x-address'] || '').toLowerCase();
-    const sidToken = req.headers['x-sid-token'] || authHeader.replace(/^Bearer\s+/i, '');
-    const token = authHeader.replace(/^Bearer\s+/i, '');
+    let sidToken = req.headers['x-sid-token'] || authHeader.replace(/^Bearer\s+/i, '');
+    let token = authHeader.replace(/^Bearer\s+/i, '');
+
+    if (address && address.includes('@')) {
+      const addrDomain = address.split('@')[1];
+      if (GUERRILLA_DOMAINS.includes(addrDomain)) {
+        provider = 'guerrillamail';
+      }
+    }
 
     let normalizedMessages = [];
+    let refreshedSidToken = null;
 
     if (address && simulatedMessagesStore.has(address)) {
       normalizedMessages.push(...simulatedMessagesStore.get(address));
     }
 
     if (provider === 'tempmail_io' && address) {
-      const msgRes = await fetch(`${PROVIDERS.tempmail_io.apiUrl}/email/${encodeURIComponent(address)}/messages`, {
+      let msgRes = await fetch(`${PROVIDERS.tempmail_io.apiUrl}/email/${encodeURIComponent(address)}/messages`, {
         headers: { 'User-Agent': 'Mozilla/5.0' },
         signal: AbortSignal.timeout(8000),
       });
+
+      if (msgRes.status === 400 && address.includes('@')) {
+        const [prefix, dom] = address.split('@');
+        try {
+          await fetch(`${PROVIDERS.tempmail_io.apiUrl}/email/new`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+            body: JSON.stringify({ name: prefix, domain: dom }),
+            signal: AbortSignal.timeout(5000),
+          });
+          msgRes = await fetch(`${PROVIDERS.tempmail_io.apiUrl}/email/${encodeURIComponent(address)}/messages`, {
+            headers: { 'User-Agent': 'Mozilla/5.0' },
+            signal: AbortSignal.timeout(5000),
+          });
+        } catch (e) {}
+      }
+
       if (msgRes.ok) {
         const list = await msgRes.json();
         if (Array.isArray(list)) {
@@ -499,15 +579,36 @@ app.get('/api/mailbox/messages', async (req, res) => {
           });
         }
       }
-    } else if (provider === 'guerrillamail' && sidToken) {
-      const checkRes = await fetch(
-        `${PROVIDERS.guerrillamail.apiUrl}?f=check_email&seq=0&sid_token=${encodeURIComponent(sidToken)}`,
-        { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
-      );
-      if (checkRes.ok) {
-        const data = await checkRes.json();
-        const list = data.list || [];
-        list.forEach((m) => {
+    } else if (provider === 'guerrillamail') {
+      const prefix = address ? address.split('@')[0] : '';
+      let activeSid = sidToken;
+      let checkData = null;
+
+      if (activeSid && !activeSid.startsWith('local_token_')) {
+        try {
+          const checkRes = await fetch(
+            `${PROVIDERS.guerrillamail.apiUrl}?f=check_email&seq=0&sid_token=${encodeURIComponent(activeSid)}`,
+            { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(6000) }
+          );
+          if (checkRes.ok) checkData = await checkRes.json();
+        } catch (e) {}
+      }
+
+      if (!checkData || checkData.error || !checkData.list) {
+        const renewed = await getOrRenewGuerrillaSession(prefix, activeSid);
+        activeSid = renewed.sidToken;
+        refreshedSidToken = renewed.sidToken;
+        try {
+          const retryRes = await fetch(
+            `${PROVIDERS.guerrillamail.apiUrl}?f=check_email&seq=0&sid_token=${encodeURIComponent(activeSid)}`,
+            { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(6000) }
+          );
+          if (retryRes.ok) checkData = await retryRes.json();
+        } catch (e) {}
+      }
+
+      if (checkData && Array.isArray(checkData.list)) {
+        checkData.list.forEach((m) => {
           normalizedMessages.push({
             id: m.mail_id,
             msgId: m.mail_id,
@@ -524,6 +625,7 @@ app.get('/api/mailbox/messages', async (req, res) => {
             createdAt: m.mail_date || new Date().toISOString(),
             text: m.mail_body || m.mail_excerpt || '',
             html: m.mail_body || '',
+            sidToken: activeSid,
           });
         });
       }
@@ -555,7 +657,14 @@ app.get('/api/mailbox/messages', async (req, res) => {
     }
 
     normalizedMessages.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    res.json({ success: true, total: normalizedMessages.length, messages: normalizedMessages });
+    if (refreshedSidToken) res.setHeader('x-refreshed-sid-token', refreshedSidToken);
+
+    res.json({
+      success: true,
+      total: normalizedMessages.length,
+      messages: normalizedMessages,
+      refreshedSidToken: refreshedSidToken || undefined,
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -565,10 +674,17 @@ app.get('/api/mailbox/messages/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const authHeader = req.headers.authorization || '';
-    const provider = req.headers['x-provider'] || 'tempmail_io';
+    let provider = req.headers['x-provider'] || 'tempmail_io';
     const address = (req.headers['x-address'] || '').toLowerCase();
-    const sidToken = req.headers['x-sid-token'] || authHeader.replace(/^Bearer\s+/i, '');
+    let sidToken = req.headers['x-sid-token'] || authHeader.replace(/^Bearer\s+/i, '');
     const token = authHeader.replace(/^Bearer\s+/i, '');
+
+    if (address && address.includes('@')) {
+      const addrDomain = address.split('@')[1];
+      if (GUERRILLA_DOMAINS.includes(addrDomain)) {
+        provider = 'guerrillamail';
+      }
+    }
 
     if (address && simulatedMessagesStore.has(address)) {
       const localMsg = simulatedMessagesStore.get(address).find((m) => String(m.id) === String(id));
@@ -609,35 +725,54 @@ app.get('/api/mailbox/messages/:id', async (req, res) => {
       }
     }
 
-    if (provider === 'guerrillamail' && sidToken) {
-      const fetchRes = await fetch(
-        `${PROVIDERS.guerrillamail.apiUrl}?f=fetch_email&email_id=${encodeURIComponent(id)}&sid_token=${encodeURIComponent(sidToken)}`,
+    if (provider === 'guerrillamail') {
+      let activeSid = sidToken;
+      const prefix = address ? address.split('@')[0] : '';
+      if (!activeSid || activeSid.startsWith('local_token_')) {
+        const renewed = await getOrRenewGuerrillaSession(prefix, activeSid);
+        activeSid = renewed.sidToken;
+      }
+
+      let fetchRes = await fetch(
+        `${PROVIDERS.guerrillamail.apiUrl}?f=fetch_email&email_id=${encodeURIComponent(id)}&sid_token=${encodeURIComponent(activeSid)}`,
         { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
       );
+
+      if (!fetchRes.ok) {
+        const renewed = await getOrRenewGuerrillaSession(prefix, activeSid);
+        activeSid = renewed.sidToken;
+        fetchRes = await fetch(
+          `${PROVIDERS.guerrillamail.apiUrl}?f=fetch_email&email_id=${encodeURIComponent(id)}&sid_token=${encodeURIComponent(activeSid)}`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(8000) }
+        );
+      }
+
       if (fetchRes.ok) {
         const m = await fetchRes.json();
-        return res.json({
-          success: true,
-          message: {
-            id: m.mail_id,
-            msgId: m.mail_id,
-            from: { name: m.mail_from ? m.mail_from.split('@')[0] : 'Sender', address: m.mail_from || '' },
-            to: [{ address: address || m.mail_recipient, name: 'You' }],
-            subject: m.mail_subject || '(No Subject)',
-            intro: m.mail_excerpt || '',
-            seen: true,
-            isDeleted: false,
-            hasAttachments: Boolean(m.att && Number(m.att) > 0),
-            attachments: [],
-            text: m.mail_body ? m.mail_body.replace(/<[^>]+>/g, '') : '',
-            html: m.mail_body || '',
-            createdAt: m.mail_date || new Date().toISOString(),
-          },
-        });
+        if (!m.error) {
+          return res.json({
+            success: true,
+            message: {
+              id: m.mail_id,
+              msgId: m.mail_id,
+              from: { name: m.mail_from ? m.mail_from.split('@')[0] : 'Sender', address: m.mail_from || '' },
+              to: [{ address: address || m.mail_recipient, name: 'You' }],
+              subject: m.mail_subject || '(No Subject)',
+              intro: m.mail_excerpt || '',
+              seen: true,
+              isDeleted: false,
+              hasAttachments: Boolean(m.att && Number(m.att) > 0),
+              attachments: [],
+              text: m.mail_body ? m.mail_body.replace(/<[^>]+>/g, '') : '',
+              html: m.mail_body || '',
+              createdAt: m.mail_date || new Date().toISOString(),
+            },
+          });
+        }
       }
     }
 
-    if ((provider === 'mailtm' || provider === 'mailgw') && token) {
+    if (provider === 'mailtm' || provider === 'mailgw') {
       const apiUrl = PROVIDERS[provider]?.apiUrl || PROVIDERS.mailtm.apiUrl;
       const msgRes = await fetch(`${apiUrl}/messages/${encodeURIComponent(id)}`, {
         headers: { Authorization: `Bearer ${token}`, 'User-Agent': 'Mozilla/5.0' },
@@ -652,6 +787,8 @@ app.get('/api/mailbox/messages/:id', async (req, res) => {
             msgId: m.msgid,
             from: m.from || { name: 'Sender', address: '' },
             to: m.to || [{ address: address, name: 'You' }],
+            cc: m.cc || [],
+            bcc: m.bcc || [],
             subject: m.subject || '(No Subject)',
             intro: m.intro || '',
             seen: true,
@@ -668,9 +805,38 @@ app.get('/api/mailbox/messages/:id', async (req, res) => {
       }
     }
 
-    return res.status(404).json({ success: false, error: 'Email message not found' });
+    return res.status(404).json({ success: false, error: 'Email not found' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/mailbox/attachment', async (req, res) => {
+  try {
+    let { url, filename = 'attachment', token } = req.query;
+    if (!url) return res.status(400).json({ success: false, error: 'Missing attachment URL' });
+
+    if (url.startsWith('/')) {
+      url = `${PROVIDERS.mailtm.apiUrl}${url}`;
+    }
+
+    const authHeader = req.headers.authorization || (token ? `Bearer ${token}` : '');
+    const headers = { 'User-Agent': 'Mozilla/5.0' };
+    if (authHeader) headers.Authorization = authHeader;
+
+    const upstreamRes = await fetch(url, { headers });
+    if (!upstreamRes.ok) {
+      return res.status(upstreamRes.status).json({ success: false, error: 'Failed to download attachment' });
+    }
+
+    const contentType = upstreamRes.headers.get('content-type') || 'application/octet-stream';
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
+
+    const arrayBuffer = await upstreamRes.arrayBuffer();
+    return res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 
@@ -685,26 +851,55 @@ app.delete('/api/mailbox/messages/:id', async (req, res) => {
 
     if (address && simulatedMessagesStore.has(address)) {
       const list = simulatedMessagesStore.get(address);
-      simulatedMessagesStore.set(
-        address,
-        list.filter((m) => String(m.id) !== String(id))
-      );
+      simulatedMessagesStore.set(address, list.filter((m) => String(m.id) !== String(id)));
     }
 
     if (provider === 'guerrillamail' && sidToken) {
       await fetch(
         `${PROVIDERS.guerrillamail.apiUrl}?f=del_email&email_ids[]=${encodeURIComponent(id)}&sid_token=${encodeURIComponent(sidToken)}`,
         { headers: { 'User-Agent': 'Mozilla/5.0' } }
-      );
+      ).catch(() => {});
     } else if ((provider === 'mailtm' || provider === 'mailgw') && token) {
       const apiUrl = PROVIDERS[provider]?.apiUrl || PROVIDERS.mailtm.apiUrl;
       await fetch(`${apiUrl}/messages/${encodeURIComponent(id)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
-      });
+      }).catch(() => {});
     }
 
     res.json({ success: true, message: 'Message deleted' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/mailbox/account/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const authHeader = req.headers.authorization || '';
+    const provider = req.headers['x-provider'] || 'tempmail_io';
+    const address = (req.headers['x-address'] || '').toLowerCase();
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+
+    if (address && simulatedMessagesStore.has(address)) {
+      simulatedMessagesStore.delete(address);
+    }
+
+    if (provider === 'tempmail_io' && address && token) {
+      await fetch(`${PROVIDERS.tempmail_io.apiUrl}/email/${encodeURIComponent(address)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: token }),
+      }).catch(() => {});
+    } else if ((provider === 'mailtm' || provider === 'mailgw') && token) {
+      const apiUrl = PROVIDERS[provider]?.apiUrl || PROVIDERS.mailtm.apiUrl;
+      await fetch(`${apiUrl}/accounts/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {});
+    }
+
+    res.json({ success: true, message: 'Mailbox destroyed' });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
@@ -759,12 +954,12 @@ app.post('/api/mailbox/simulate-email', (req, res) => {
     hasAttachments: false,
     attachments: [],
     createdAt: new Date().toISOString(),
-    text: `Hello,\n\n${selected.title}\n${selected.desc}\n\nVERIFICATION CODE: ${otpCode}\n\nGenerated at: ${timeStr}\n\nBest regards,\n${selected.name} Team`,
+    text: `Hello,\n\n${selected.title}\n${selected.desc}\n\nVERIFICATION CODE: ${otpCode}\n\nGenerated at: ${timeStr}\nIf you did not request this code, no action is needed.\n\nBest regards,\n${selected.name} Team`,
     html: `
       <div style="background-color: #0f172a; padding: 32px 16px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
-        <div style="max-width: 520px; margin: 0 auto; background: #1e293b; border-radius: 16px; border: 1px solid #334155; overflow: hidden;">
+        <div style="max-width: 520px; margin: 0 auto; background: #1e293b; border-radius: 16px; border: 1px solid #334155; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.5);">
           <div style="background: linear-gradient(135deg, #6366f1, #a855f7); padding: 24px; text-align: center;">
-            <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 800;">${selected.name}</h1>
+            <h1 style="color: #ffffff; margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">${selected.name}</h1>
             <p style="color: rgba(255,255,255,0.85); margin: 6px 0 0 0; font-size: 13px;">Official Security Notice &bull; Delivered at ${timeStr}</p>
           </div>
           <div style="padding: 28px 24px; color: #e2e8f0;">
@@ -775,6 +970,9 @@ app.post('/api/mailbox/simulate-email', (req, res) => {
               <span style="font-size: 34px; font-weight: 900; letter-spacing: 0.25em; color: #38bdf8; font-family: monospace;">${otpCode}</span>
             </div>
             <p style="font-size: 12px; color: #64748b; line-height: 1.5; margin: 0 0 20px 0;">This passcode expires in 10 minutes. Never share this code with anyone.</p>
+            <div style="text-align: center;">
+              <a href="#" style="display: inline-block; background: #6366f1; color: #ffffff; padding: 10px 24px; border-radius: 8px; font-size: 13px; font-weight: 600; text-decoration: none;">${selected.btnText}</a>
+            </div>
           </div>
           <div style="background: #0c1222; padding: 14px 24px; text-align: center; border-top: 1px solid #1e293b; font-size: 11px; color: #64748b;">
             Sent to ${normalizedAddress} &bull; Protected by TempMail Pro Worldwide Gateway
@@ -798,20 +996,27 @@ app.post('/api/mailbox/simulate-email', (req, res) => {
 });
 
 app.get('/api/fake-persona', (req, res) => {
-  const firstNames = ['Alexander', 'Marcus', 'Elena', 'Sophia', 'Julian', 'Liam', 'Chloe', 'Adrian', 'Valerie', 'Nathan'];
-  const lastNames = ['Sterling', 'Vance', 'Cross', 'Mercer', 'Hayden', 'Kensington', 'Sinclair', 'Donovan', 'Chen', 'Bennett'];
+  const firstNames = ['Alexander', 'Marcus', 'Elena', 'Sophia', 'Julian', 'Liam', 'Chloe', 'Adrian', 'Valerie', 'Nathan', 'Ethan', 'Oliver', 'Isabella', 'Charlotte'];
+  const lastNames = ['Sterling', 'Vance', 'Cross', 'Mercer', 'Hayden', 'Kensington', 'Sinclair', 'Donovan', 'Chen', 'Bennett', 'Hawthorne', 'Montgomery'];
+  const streets = ['442 Montgomery St', '1280 Avenue of the Americas', '855 Market Street', '720 Pinecrest Boulevard', '1900 Silicon Parkway', '500 Tech Vista Lane'];
   const cities = [
     { city: 'San Francisco', state: 'CA', zip: '94104', country: 'United States' },
     { city: 'New York', state: 'NY', zip: '10020', country: 'United States' },
     { city: 'Seattle', state: 'WA', zip: '98101', country: 'United States' },
     { city: 'Austin', state: 'TX', zip: '78701', country: 'United States' },
+    { city: 'Chicago', state: 'IL', zip: '60601', country: 'United States' },
+    { city: 'Boston', state: 'MA', zip: '02110', country: 'United States' },
   ];
-  const companies = ['Apex Cloud Solutions', 'Nexus Cyber Labs', 'Aegis Dynamic Systems', 'Quantum Crest Tech'];
-  const titles = ['Senior Systems Engineer', 'Cloud Infrastructure Architect', 'Product Lead', 'Security Analyst'];
+  const companies = ['Apex Cloud Solutions', 'Nexus Cyber Labs', 'Aegis Dynamic Systems', 'Vanguard Data Systems', 'Quantum Crest Tech', 'Vertex Media Labs'];
+  const titles = ['Senior Systems Engineer', 'Cloud Infrastructure Architect', 'Product Development Lead', 'Security Analyst', 'Full-Stack Developer', 'DevOps Specialist'];
 
   const fName = firstNames[Math.floor(Math.random() * firstNames.length)];
   const lName = lastNames[Math.floor(Math.random() * lastNames.length)];
   const loc = cities[Math.floor(Math.random() * cities.length)];
+  const street = streets[Math.floor(Math.random() * streets.length)];
+  const comp = companies[Math.floor(Math.random() * companies.length)];
+  const title = titles[Math.floor(Math.random() * titles.length)];
+  const phone = `+1 (${Math.floor(200 + Math.random() * 700)}) ${Math.floor(200 + Math.random() * 800)}-${Math.floor(1000 + Math.random() * 9000)}`;
 
   res.json({
     success: true,
@@ -820,16 +1025,28 @@ app.get('/api/fake-persona', (req, res) => {
       firstName: fName,
       lastName: lName,
       username: `${fName.toLowerCase()}.${lName.toLowerCase()}${Math.floor(Math.random() * 89 + 10)}`,
-      phone: `+1 (${Math.floor(200 + Math.random() * 700)}) ${Math.floor(200 + Math.random() * 800)}-${Math.floor(1000 + Math.random() * 9000)}`,
-      street: '742 Evergreen Parkway',
+      phone: phone,
+      street: street,
       city: loc.city,
       state: loc.state,
       zip: loc.zip,
       country: loc.country,
-      company: companies[Math.floor(Math.random() * companies.length)],
-      jobTitle: titles[Math.floor(Math.random() * titles.length)],
+      company: comp,
+      jobTitle: title,
       birthDate: `199${Math.floor(Math.random() * 8 + 1)}-0${Math.floor(Math.random() * 9 + 1)}-${Math.floor(Math.random() * 20 + 10)}`,
     },
+  });
+});
+
+app.get('/api/health', async (req, res) => {
+  const domains = await fetchAllGlobalDomains();
+  const providers = await checkProviderHealth();
+  res.json({
+    status: 'online',
+    service: 'TempMail Pro Worldwide Multi-Engine Gateway',
+    timestamp: new Date().toISOString(),
+    totalActiveDomains: domains.length,
+    providers: providers,
   });
 });
 

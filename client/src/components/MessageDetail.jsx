@@ -352,7 +352,8 @@ export default function MessageDetail({
             <Paperclip size={14} /> Attachments ({message.attachments.length}):
           </span>
           {message.attachments.map((att, idx) => {
-            const downloadUrl = `/api/mailbox/attachment?url=${encodeURIComponent(att.downloadUrl)}&filename=${encodeURIComponent(att.filename)}`;
+            const rawUrl = att.downloadUrl || att.url || '';
+            const downloadUrl = `/api/mailbox/attachment?url=${encodeURIComponent(rawUrl)}&filename=${encodeURIComponent(att.filename || 'attachment')}&token=${encodeURIComponent(authToken || '')}`;
             return (
               <a
                 key={att.id || idx}
@@ -360,12 +361,12 @@ export default function MessageDetail({
                 target="_blank"
                 rel="noreferrer"
                 className="attachment-pill"
-                download={att.filename}
+                download={att.filename || 'attachment'}
               >
                 <Download size={13} color="var(--accent-primary)" />
-                <span>{att.filename}</span>
+                <span>{att.filename || 'attachment'}</span>
                 <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>
-                  ({(att.size / 1024).toFixed(1)} KB)
+                  {att.size ? `(${(att.size / 1024).toFixed(1)} KB)` : ''}
                 </span>
               </a>
             );
